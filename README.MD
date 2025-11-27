@@ -1,7 +1,7 @@
 # Requisitos del Sistema
 
 Se asume que ya dispones de:
-* **Ubuntu** 
+* **Una distribución Linux** 
 * **GHC & Cabal** 
 
 ## Dependencias del Proyecto (Importante)
