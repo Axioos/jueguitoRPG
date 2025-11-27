@@ -1,0 +1,15 @@
+# --- Archivos generados por GHC ---
+*.hi
+*.o
+*.chi
+*.dyn_o
+*.dyn_hi
+
+# --- Ejecutables en Windows ---
+*.exe
+
+# --- Carpetas de construcción ---
+dist/
+dist-newstyle/
+.stack-work/
+cabal.project.local
