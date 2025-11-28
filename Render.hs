@@ -1,51 +1,60 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Render (render) where
+module Render (renderSDL) where
 
+import SDL
+import Linear (V4(..), V2(..))
+import Foreign.C.Types (CInt)
+import Data.Word (Word8)
+import Data.List (lookup)
 import Types
 
-color :: String -> String -> String
-color s c = "\ESC[" ++ c ++ "m" ++ s ++ "\ESC[0m"
+-- --- Configuración Visual ---
+tileSize :: CInt
+tileSize = 32
 
-cellChar :: GameState -> Int -> Int -> String
-cellChar GameState{..} x y
-  | (x,y) == playerPos   = color "@" "33"      
-  | (x,y) `elem` walls   = color "#" "37"      
-  | (x,y) `elem` enemies = color "E" "31"      
-  | (x,y) == goal        = color "T" "34"     
-  | (x,y) == portalA
-    || (x,y) == portalB  = color "O" "36"      
-  | otherwise =
-      case lookup (x,y) items of
-        Just QuestItem -> color "Q" "36"       
-        Just Heart     -> color "H" "32"      
-        Just Strength  -> color "S" "35"       
-        Nothing        -> "."
+-- --- Función Principal de Renderizado ---
+renderSDL :: Renderer -> GameState -> IO ()
+renderSDL renderer gs@GameState{..} = do
+  -- 1. Limpiar pantalla (Fondo negro)
+  rendererDrawColor renderer $= V4 0 0 0 255
+  clear renderer
 
-render :: GameState -> IO ()
-render gs@GameState{..} = do
-  putStr "\ESC[2J\ESC[H"
-  putStrLn "=== Dungeon RPG ==="
-  putStrLn "WASD mover | E atacar | Q salir\n"
+  -- 2. Dibujar mapa
+  let coords = [ (x, y) | x <- [0..width-1], y <- [0..height-1] ]
+  mapM_ (drawCell renderer gs) coords
 
-  mapM_ putStrLn
-    [ concat [ cellChar gs x y | x <- [0 .. width-1] ]
-    | y <- [0 .. height-1]
-    ]
+  -- 3. Mostrar frame
+  present renderer
 
-  putStrLn ""
-  putStrLn $ "HP: "  ++ show hp ++ "/" ++ show maxHp
-           ++ "  ATK: " ++ show atk
-  putStrLn $ "Objetos de misión (Q): " ++ show questCollected
-           ++ "/" ++ show totalQuest
-  putStrLn ""
-  putStrLn "Leyenda:"
-  putStrLn "  @ = Jugador"
-  putStrLn "  E = Enemigo"
-  putStrLn "  Q = Objeto de misión (debes recoger todos)"
-  putStrLn "  H = Cura 2 puntos de vida"
-  putStrLn "  S = Aumenta tu fuerza (ATK, radio del ataque con E)"
-  putStrLn "  T = Tesoro / salida (solo funciona si tienes todos los Q)"
-  putStrLn "  O = Portal (teletransporta al otro portal)"
-  putStrLn ""
-  putStrLn $ "Mensaje: " ++ message
+-- --- Dibujado de Celdas Individuales ---
+drawCell :: Renderer -> GameState -> (Int, Int) -> IO ()
+drawCell renderer GameState{..} (x, y) = do
+  let pos = (x,y)
+      
+      -- Selección de color según el tipo de objeto
+      color 
+        | pos == playerPos     = V4 255 255 0 255   -- Jugador (Amarillo)
+        | pos == goal          = V4 0 0 255 255     -- Meta (Azul)
+        | pos == portalA       = V4 0 255 255 255   -- Portales (Cyan)
+        | pos == portalB       = V4 0 255 255 255
+        | pos `elem` walls     = V4 128 128 128 255 -- Paredes (Gris)
+        | pos `elem` enemies   = V4 255 0 0 255     -- Enemigos (Rojo)
+        | otherwise            = checkItems pos items
+
+  -- Definir y pintar rectángulo
+  let rect = Rectangle (P (V2 (fromIntegral x * tileSize) (fromIntegral y * tileSize))) 
+                       (V2 tileSize tileSize)
+
+  rendererDrawColor renderer $= color
+  fillRect renderer (Just rect)
+
+-- --- Auxiliares ---
+checkItems :: Position -> [(Position, ItemKind)] -> V4 Word8
+checkItems pos itemList = 
+    case lookup pos itemList of
+        Just QuestItem -> V4 255 165 0 255  -- Misión (Naranja)
+        Just Heart     -> V4 0 255 0 255    -- Vida (Verde)
+        Just Strength  -> V4 255 0 255 255  -- Fuerza (Magenta)
+        Nothing        -> V4 20 20 20 255   -- Suelo vacío
