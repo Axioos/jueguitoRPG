@@ -4,10 +4,12 @@
 module Main where
 
 import SDL
+import SDL.Image (load, InitFlag(..), initialize)
 import Control.Monad (unless)
 import Control.Monad.State (execState)
 import Linear (V2(..))
 import Data.Maybe (listToMaybe, mapMaybe)
+import Control.Exception (catch, SomeException)
 
 import Types
 import Logic
@@ -16,31 +18,43 @@ import Render (renderSDL)
 -- --- Inicialización ---
 main :: IO ()
 main = do
-  initializeAll
+  SDL.initializeAll
+  SDL.Image.initialize [InitPNG]
   
-  -- Crear ventana
   window <- createWindow "Dungeon RPG" defaultWindow { windowInitialSize = V2 960 480 }
   renderer <- createRenderer window (-1) defaultRenderer
   
-  putStrLn "--Juego iniciado--"
+  orcTexture <- loadTexture renderer "assets/enemigo/orc_walk.png"
+
+  putStrLn "--- Juego Iniciado ---"
+  appLoop renderer orcTexture initialState
   
-  -- Arrancar bucle
-  appLoop renderer initialState
-  
+  mapM_ destroyTexture orcTexture
   destroyRenderer renderer
   destroyWindow window
   quit
 
--- --- Bucle del Juego (Game Loop) ---
-appLoop :: Renderer -> GameState -> IO ()
-appLoop renderer gs = do
-  -- 1. Capturar eventos
+loadTexture :: Renderer -> FilePath -> IO (Maybe Texture)
+loadTexture r path = catch loadIt handleErr
+  where
+    loadIt = do
+        surface <- SDL.Image.load path
+        texture <- createTextureFromSurface r surface
+        freeSurface surface
+        return (Just texture)
+
+    handleErr :: SomeException -> IO (Maybe Texture)
+    handleErr _ = do
+        putStrLn $ "Error crítico: No se encuentra " ++ path
+        return Nothing
+
+-- --- Bucle Principal ---
+appLoop :: Renderer -> Maybe Texture -> GameState -> IO ()
+appLoop renderer texOrc gs = do
   events <- pollEvents
   let eventPayloads = map eventPayload events
       quitSignal = any (== QuitEvent) eventPayloads
   
-  -- 2. Lógica de Input
-  -- Usamos mapMaybe para filtrar solo las teclas validas
   let commands = mapMaybe getKey [ c | KeyboardEvent c <- eventPayloads ]
       command  = listToMaybe commands
 
@@ -48,17 +62,14 @@ appLoop renderer gs = do
                  Just c  -> handleInput c gs
                  Nothing -> gs
 
-  -- 3. Renderizado
-  renderSDL renderer gsNext
+  renderSDL renderer texOrc gsNext
   
-  -- 4. Logs en consola
   case command of 
       Just _ -> putStrLn $ "HP: " ++ show (hp gsNext) ++ " | " ++ message gsNext
       Nothing -> return ()
 
-  -- 5. Control de FPS y Recursión
-  delay 20 -- ~50 FPS
-  unless (quitSignal || gameOver gsNext) (appLoop renderer gsNext)
+  delay 50
+  unless (quitSignal || gameOver gsNext) (appLoop renderer texOrc gsNext)
   
   if gameOver gsNext 
      then putStrLn "=== FIN DEL JUEGO ==="
@@ -74,5 +85,5 @@ getKey KeyboardEventData{ keyboardEventKeysym = Keysym{..}, keyboardEventKeyMoti
     KeycodeD -> Just 'd'
     KeycodeE -> Just 'e' 
     KeycodeQ -> Just 'q' 
-    _        -> Nothing -- Cualquier otra tecla se ignora
-getKey _ = Nothing      -- Soltar tecla (Released) se ignora
+    _        -> Nothing 
+getKey _ = Nothing

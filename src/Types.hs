@@ -1,11 +1,15 @@
 module Types
   ( Position
+  , Direction(..)
   , ItemKind(..)
   , GameState(..)
   ) where
 
 type Position = (Int, Int)
 
+-- Direcciones para la animación
+data Direction = DUp | DLeft | DDown | DRight
+  deriving (Show, Eq)
 
 data ItemKind
   = QuestItem   
@@ -21,7 +25,7 @@ data GameState = GameState
   , questCollected :: Int
   , totalQuest     :: Int
   , items          :: [(Position, ItemKind)]
-  , enemies        :: [Position]
+  , enemies        :: [(Position, Direction)] -- Ahora guarda Posición y Dirección
   , walls          :: [Position]
   , goal           :: Position
   , portalA        :: Position
@@ -32,4 +36,5 @@ data GameState = GameState
   , gameOver       :: Bool
   , win            :: Bool
   , level          :: Int
+  , gameFrame      :: Int 
   } deriving (Show)

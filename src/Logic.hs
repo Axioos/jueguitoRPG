@@ -10,9 +10,7 @@ import Control.Monad.State
 import Control.Monad (unless)
 import Data.List (partition)
 
-
-
-
+-- --- Estado Inicial ---
 initialState :: GameState
 initialState =
   let w = 30
@@ -30,25 +28,20 @@ initialState =
         [ (20, y) | y <- [3..10] ]
 
       allWalls = borderWalls ++ internalWalls
-
-  
+      
       pA = (1, h-2)    
       pB = (w-2, 1)    
-
     
       questItems =
-        [ ((5,2),  QuestItem)
-        , ((14,3), QuestItem)
-        , ((25,9), QuestItem)
-        ]
-
+        [ ((5,2),  QuestItem), ((14,3), QuestItem), ((25,9), QuestItem) ]
       
       itemsPos =
         questItems ++
-        [ ((4,10), Heart)      
-        , ((18,5), Strength)  
-        , ((22,3), Heart)
-        ]
+        [ ((4,10), Heart), ((18,5), Strength), ((22,3), Heart) ]
+
+      -- Inicializar enemigos mirando hacia abajo
+      initialEnemies = 
+        [ ((12,4), DDown), ((18,4), DDown), ((9,11), DDown), ((22,8), DDown) ]
 
   in GameState
       { playerPos      = (2,2)
@@ -58,7 +51,7 @@ initialState =
       , questCollected = 0
       , totalQuest     = length questItems
       , items          = itemsPos
-      , enemies        = [(12,4),(18,4),(9,11),(22,8)]
+      , enemies        = initialEnemies
       , walls          = allWalls
       , goal           = (27,11)
       , portalA        = pA
@@ -69,13 +62,14 @@ initialState =
       , gameOver       = False
       , win            = False
       , level          = 1
+      , gameFrame      = 0
       }
 
-
-
-
+-- --- Manejo de Inputs ---
 handleInput :: Char -> GameState -> GameState
-handleInput c gs = execState (gameStep c) gs
+handleInput c gs = 
+    let gs' = execState (gameStep c) gs
+    in gs' { gameFrame = gameFrame gs' + 1 }
 
 gameStep :: Char -> State GameState ()
 gameStep c = do
@@ -87,15 +81,13 @@ gameStep c = do
       'a' -> movePlayer 'a' >> resolvePlayerTile
       'd' -> movePlayer 'd' >> resolvePlayerTile
       'e' -> playerAttack
-      _   -> modify (\st -> st { message = "Tecla desconocida. Usa WASD para moverte, E para atacar, Q para salir." })
+      _   -> modify (\st -> st { message = "Tecla desconocida." })
     after <- get
     unless (gameOver after) $ do
       moveEnemies
       enemyDamage
 
-
-
-
+-- --- Lógica de Movimiento ---
 movePlayer :: Char -> State GameState ()
 movePlayer dir = do
   gs@GameState{..} <- get
@@ -113,9 +105,6 @@ movePlayer dir = do
         (nx,ny) `notElem` walls
   put gs { playerPos = if valid np then np else playerPos }
 
-
-
-
 resolvePlayerTile :: State GameState ()
 resolvePlayerTile = do
   gs@GameState{..} <- get
@@ -132,48 +121,33 @@ resolvePlayerTile = do
       newAtk     = atk + atkGained
       newQuest   = questCollected + questN
 
-      (hitEnemies, restEnemies) = partition (== pos) enemies
+      -- Colisión con enemigos (ignorando dirección)
+      (hitEnemies, restEnemies) = partition (\(p,_) -> p == pos) enemies
       hit = not (null hitEnemies)
       newHpPrePortal = if hit then newHpBase - 1 else newHpBase
 
-     
       winGameBase = pos == goal && newQuest == totalQuest
       deadBase    = newHpPrePortal <= 0
 
-      
-      msgHp
-        | hpGained == 0 = ""
-        | hpGained == 2 = "Recuperas 2 puntos de vida con H. "
-        | otherwise     = "Recuperas " ++ show hpGained ++ " puntos de vida con H. "
-
-      msgAtk
-        | atkGained == 0 = ""
-        | atkGained == 1 = "Tu fuerza aumenta en 1 con S (ATK = " ++ show newAtk ++ "). "
-        | otherwise      = "Tu fuerza aumenta en " ++ show atkGained ++ " con S (ATK = " ++ show newAtk ++ "). "
-
-      msgQuest
-        | questN == 0   = ""
-        | questN == 1   = "Recolectas un objeto de misión Q (" ++ show newQuest ++ "/" ++ show totalQuest ++ "). "
-        | otherwise     = "Recolectas varios objetos de misión Q (" ++ show newQuest ++ "/" ++ show totalQuest ++ "). "
-
-      msgHit
-        | not hit       = ""
-        | otherwise     = "Te lanzas contra un enemigo E: lo derrotas pero pierdes 1 HP. "
-
-    
+      msgHp | hpGained > 0  = "Recuperas " ++ show hpGained ++ " HP. "
+            | otherwise     = ""
+      msgAtk | atkGained > 0 = "ATK aumenta en " ++ show atkGained ++ ". "
+             | otherwise     = ""
+      msgQuest | questN > 0    = "Mision (" ++ show newQuest ++ "/" ++ show totalQuest ++ "). "
+               | otherwise     = ""
+      msgHit | hit           = "Te chocas con un enemigo (-1 HP). "
+             | otherwise     = ""
       (posAfterPortal, msgPortal)
-        | pos == portalA = (portalB, "Entras al portal y apareces en la esquina opuesta. ")
-        | pos == portalB = (portalA, "Entras al portal y apareces en la esquina opuesta. ")
+        | pos == portalA = (portalB, "Portal activado. ")
+        | pos == portalB = (portalA, "Portal activado. ")
         | otherwise      = (pos, "")
 
       baseMsg = msgQuest ++ msgHp ++ msgAtk ++ msgHit ++ msgPortal
-
       winGame = winGameBase  
       dead    = deadBase
-
       finalMsg
-        | winGame = "¡Ganaste! Recolectaste todos los Q y llegaste al tesoro T."
-        | dead    = "Te quedaste sin HP. Game Over."
+        | winGame       = "¡Ganaste!"
+        | dead          = "Game Over."
         | baseMsg == "" = message
         | otherwise     = baseMsg
 
@@ -189,86 +163,79 @@ resolvePlayerTile = do
     , message        = finalMsg
     }
 
-
-
-
+-- --- Combate ---
 playerAttack :: State GameState ()
 playerAttack = do
   gs@GameState{..} <- get
   let (x,y)  = playerPos
       radius = max 1 atk
       area   = [ (x+dx,y+dy) | dx <- [-radius..radius], dy <- [-radius..radius] ]
-      (killed, alive) = partition (`elem` area) enemies
+      (killed, alive) = partition (\(p,_) -> p `elem` area) enemies
       msg
-        | null killed = "Atacas con E, pero no alcanzas a ningún enemigo."
-        | otherwise   = "Eliminas " ++ show (length killed) ++ " enemigo(s) con tu ataque E."
-  put gs
-    { enemies = alive
-    , message = msg
-    }
+        | null killed = "Ataque fallido."
+        | otherwise   = "Eliminas " ++ show (length killed) ++ " enemigo(s)."
+  put gs { enemies = alive, message = msg }
 
-
-
-
+-- --- IA de Enemigos (CORREGIDA) ---
 moveEnemies :: State GameState ()
 moveEnemies = do
   gs@GameState{..} <- get
   let (px,py) = playerPos
+      
+      -- Función recursiva para mover enemigos uno a uno evitando solapamientos
+      -- 'pending': Enemigos que faltan por mover
+      -- 'acc': Enemigos que ya se movieron (su nueva posición)
+      solveCollisions [] _ = []
+      solveCollisions ((p, oldDir):pending) acc =
+        let 
+            -- "others" incluye los que YA se movieron (acc) y los que FALTAN (pending)
+            -- Así evitamos movernos a donde está otro o a donde acaba de llegar otro.
+            others = map fst acc ++ map fst pending
+            
+            newP   = enemyStep (px,py) walls width height others p
+            newDir = determineDir p newP oldDir
+            
+            movedEnemy = (newP, newDir)
+        in 
+            movedEnemy : solveCollisions pending (movedEnemy : acc)
 
-      stepMove :: [Position] -> Position -> [Position]
-      stepMove acc e =
-        let newPos = enemyStep (px,py) walls width height acc e
-        in newPos : acc
-
-      newEnemies = reverse (foldl stepMove [] enemies)
-
+  -- Iniciar el cálculo secuencial
+  let newEnemies = solveCollisions enemies []
+      
   put gs { enemies = newEnemies }
 
-enemyStep :: Position         
-          -> [Position]       
-          -> Int              
-          -> Int              
-          -> [Position]       
-          -> Position         
-          -> Position
+-- Determinar hacia dónde mirar
+determineDir :: Position -> Position -> Direction -> Direction
+determineDir (ox, oy) (nx, ny) oldDir
+  | nx > ox = DRight
+  | nx < ox = DLeft
+  | ny > oy = DDown
+  | ny < oy = DUp
+  | otherwise = oldDir
+
+-- Calcular siguiente paso
+enemyStep :: Position -> [Position] -> Int -> Int -> [Position] -> Position -> Position
 enemyStep (px,py) ws w h occupied (ex,ey) =
   let dx = signum (px - ex)
       dy = signum (py - ey)
-
-      candidates =
-        [ (ex + dx, ey + dy)
-        , (ex + dx, ey)
-        , (ex, ey + dy)
-        , (ex, ey)
-        ]
-
-      valid (x,y) =
-        x >= 0 && x < w &&
-        y >= 0 && y < h &&
-        (x,y) `notElem` ws &&
-        (x,y) `notElem` occupied
-
+      candidates = [(ex+dx, ey), (ex, ey+dy), (ex+dx, ey+dy)]
+      valid (x,y) = x >= 0 && x < w && y >= 0 && y < h 
+                    && (x,y) `notElem` ws 
+                    && (x,y) `notElem` occupied 
+                    && (x,y) /= (ex,ey) -- Evitar quedarse quieto si puede moverse
   in case filter valid candidates of
        (p:_) -> p
        []    -> (ex,ey)
 
-
-
-
 enemyDamage :: State GameState ()
 enemyDamage = do
   gs@GameState{..} <- get
-  let (hit, rest) = partition (== playerPos) enemies
+  let (hit, rest) = partition (\(p,_) -> p == playerPos) enemies
       wasHit      = not (null hit)
       newHp       = if wasHit then hp - 1 else hp
       dead        = newHp <= 0
       msg
-        | dead      = "Un enemigo E te golpea. Te quedas sin HP. Game Over."
-        | wasHit    = "Un enemigo E te golpea y pierdes 1 HP."
+        | dead      = "Golpe letal recibido. Game Over."
+        | wasHit    = "Te golpean (-1 HP)."
         | otherwise = message
-  put gs
-    { enemies = rest
-    , hp      = newHp
-    , gameOver = gameOver || dead
-    , message = msg
-    }
+  put gs { enemies = rest, hp = newHp, gameOver = gameOver || dead, message = msg }

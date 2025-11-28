@@ -24,6 +24,7 @@ executable jueguitoRPG
   -- other-extensions:
   build-depends:       base >=4.13 && <4.14
                       , sdl2
+                      , sdl2-image
                       , linear
                       , mtl
   -- hs-source-dirs:
