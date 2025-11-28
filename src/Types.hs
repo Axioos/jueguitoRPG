@@ -2,13 +2,20 @@ module Types
   ( Position
   , Direction(..)
   , ItemKind(..)
+  , Enemy(..)
   , GameState(..)
+  , moveDuration 
   ) where
 
 type Position = (Int, Int)
 
--- Direcciones para la animación
-data Direction = DUp | DLeft | DDown | DRight
+-- --- CONFIGURACIÓN ---
+-- Duración del movimiento en frames.
+-- 4 frames = Movimiento rápido y ágil (aprox 60-80ms)
+moveDuration :: Int
+moveDuration = 4
+
+data Direction = DDown | DUp | DLeft | DRight
   deriving (Show, Eq)
 
 data ItemKind
@@ -17,15 +24,25 @@ data ItemKind
   | Strength    
   deriving (Show, Eq)
 
+data Enemy = Enemy
+  { ePos  :: Position
+  , eFrom :: Position
+  , eDir  :: Direction
+  } deriving (Show, Eq)
+
 data GameState = GameState
   { playerPos      :: Position
+  , playerFrom     :: Position
+  , playerDir      :: Direction
+  , playerAtkFrame :: Int
+  , actionTimer    :: Int
   , hp             :: Int
   , maxHp          :: Int
   , atk            :: Int
   , questCollected :: Int
   , totalQuest     :: Int
   , items          :: [(Position, ItemKind)]
-  , enemies        :: [(Position, Direction)] -- Ahora guarda Posición y Dirección
+  , enemies        :: [Enemy]
   , walls          :: [Position]
   , goal           :: Position
   , portalA        :: Position

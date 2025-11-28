@@ -15,7 +15,7 @@ import Types
 import Logic
 import Render (renderSDL)
 
--- --- Inicialización ---
+-- --- INICIALIZACIÓN ---
 main :: IO ()
 main = do
   SDL.initializeAll
@@ -24,12 +24,18 @@ main = do
   window <- createWindow "Dungeon RPG" defaultWindow { windowInitialSize = V2 960 480 }
   renderer <- createRenderer window (-1) defaultRenderer
   
-  orcTexture <- loadTexture renderer "assets/enemigo/orc_walk.png"
+  -- Carga de Assets
+  texOrc   <- loadTexture renderer "assets/enemigo/orc_walk.png"
+  texPWalk <- loadTexture renderer "assets/jugador/player_walk.png"
+  texPAtk  <- loadTexture renderer "assets/jugador/player_atack.png"
 
   putStrLn "--- Juego Iniciado ---"
-  appLoop renderer orcTexture initialState
+  putStrLn "Controles: WASD (Mover) | E (Atacar) | Q (Salir)"
   
-  mapM_ destroyTexture orcTexture
+  appLoop renderer texOrc texPWalk texPAtk initialState
+  
+  -- Limpieza
+  mapM_ destroyTexture [t | Just t <- [texOrc, texPWalk, texPAtk]]
   destroyRenderer renderer
   destroyWindow window
   quit
@@ -38,52 +44,48 @@ loadTexture :: Renderer -> FilePath -> IO (Maybe Texture)
 loadTexture r path = catch loadIt handleErr
   where
     loadIt = do
-        surface <- SDL.Image.load path
-        texture <- createTextureFromSurface r surface
-        freeSurface surface
-        return (Just texture)
-
+        s <- SDL.Image.load path
+        t <- createTextureFromSurface r s
+        freeSurface s
+        return (Just t)
     handleErr :: SomeException -> IO (Maybe Texture)
     handleErr _ = do
-        putStrLn $ "Error crítico: No se encuentra " ++ path
+        putStrLn $ "Error: Falta textura " ++ path
         return Nothing
 
--- --- Bucle Principal ---
-appLoop :: Renderer -> Maybe Texture -> GameState -> IO ()
-appLoop renderer texOrc gs = do
+-- --- BUCLE PRINCIPAL (GAME LOOP) ---
+appLoop :: Renderer -> Maybe Texture -> Maybe Texture -> Maybe Texture -> GameState -> IO ()
+appLoop renderer tOrc tWalk tAtk gs = do
   events <- pollEvents
-  let eventPayloads = map eventPayload events
-      quitSignal = any (== QuitEvent) eventPayloads
+  let quitSignal = any (== QuitEvent) (map eventPayload events)
   
-  let commands = mapMaybe getKey [ c | KeyboardEvent c <- eventPayloads ]
+  -- 1. Capturar Input
+  let commands = mapMaybe getKey [ c | KeyboardEvent c <- map eventPayload events ]
       command  = listToMaybe commands
+      
+      gsInput  = case command of
+                   Just c  -> handleInput c gs
+                   Nothing -> gs
 
-      gsNext = case command of
-                 Just c  -> handleInput c gs
-                 Nothing -> gs
+  -- 2. Avanzar Tiempo
+  let gsNext = advanceAnimations gsInput
 
-  renderSDL renderer texOrc gsNext
+  -- 3. Renderizar
+  renderSDL renderer tOrc tWalk tAtk gsNext
   
+  -- 4. LOGS (Restaurado): Imprimir solo si hubo una tecla válida
   case command of 
       Just _ -> putStrLn $ "HP: " ++ show (hp gsNext) ++ " | " ++ message gsNext
       Nothing -> return ()
-
-  delay 50
-  unless (quitSignal || gameOver gsNext) (appLoop renderer texOrc gsNext)
   
-  if gameOver gsNext 
-     then putStrLn "=== FIN DEL JUEGO ==="
-     else return ()
+  delay 50 
+  unless (quitSignal || gameOver gsNext) (appLoop renderer tOrc tWalk tAtk gsNext)
+  
+  if gameOver gsNext then putStrLn "=== GANASTE ===" else return ()
 
--- --- Utilerías ---
+-- --- UTILERÍAS ---
 getKey :: KeyboardEventData -> Maybe Char
 getKey KeyboardEventData{ keyboardEventKeysym = Keysym{..}, keyboardEventKeyMotion = Pressed } =
   case keysymKeycode of
-    KeycodeW -> Just 'w'
-    KeycodeA -> Just 'a'
-    KeycodeS -> Just 's'
-    KeycodeD -> Just 'd'
-    KeycodeE -> Just 'e' 
-    KeycodeQ -> Just 'q' 
-    _        -> Nothing 
+    KeycodeW -> Just 'w'; KeycodeA -> Just 'a'; KeycodeS -> Just 's'; KeycodeD -> Just 'd'; KeycodeE -> Just 'e'; KeycodeQ -> Just 'q'; _ -> Nothing 
 getKey _ = Nothing
