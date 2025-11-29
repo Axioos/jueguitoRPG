@@ -24,3 +24,9 @@ cabal build
 ```bash
 cabal run
 ```
+#####🕹️ Controles
+Moverse: W A S D
+Atacar: E
+Salir / Volver al Menú: Q 
+Navegar en Menús W: (Arriba) / S (Abajo)
+Confirmar en Menús: E
