@@ -12,7 +12,7 @@ import Data.Maybe (listToMaybe, mapMaybe)
 import Control.Exception (catch, SomeException)
 
 import Types
-import Logic (initialState, loadInitialState, handleInput, advanceAnimations) -- Importa loadInitialState
+import Logic (initialState, loadInitialState, handleInput, advanceAnimations)
 import Render (renderSDL)
 import qualified Menu
 import Menu (MenuState, MenuOption(..), initialMenuState, handleMenuInput, renderMenu, selectedOption)
@@ -38,6 +38,7 @@ main = do
   texOrc   <- loadTexture renderer "assets/enemigo/orc_walk.png"
   texPWalk <- loadTexture renderer "assets/jugador/player_walk.png"
   texPAtk  <- loadTexture renderer "assets/jugador/player_atack.png"
+  texWall  <- loadTexture renderer "assets/dungeon/walls.png"
   
   -- Carga de Assets del Menú
   texMenuBg   <- loadTexture renderer "assets/fondo.png"
@@ -49,15 +50,15 @@ main = do
   
   let appState = AppState
         { menuState = initialMenuState
-        , gameState = initialState -- Se usa el estado puro (fallback) para inicializar
+        , gameState = initialState
         , inMenu = True
         , showingInstructions = False
         }
   
-  mainLoop renderer texOrc texPWalk texPAtk texMenuBg texMenuLogo appState
+  mainLoop renderer texOrc texPWalk texPAtk texWall texMenuBg texMenuLogo appState
   
   -- Limpieza
-  mapM_ destroyTexture [t | Just t <- [texOrc, texPWalk, texPAtk, texMenuBg, texMenuLogo]]
+  mapM_ destroyTexture [t | Just t <- [texOrc, texPWalk, texPAtk, texWall, texMenuBg, texMenuLogo]]
   destroyRenderer renderer
   destroyWindow window
   quit
@@ -76,8 +77,8 @@ loadTexture r path = catch loadIt handleErr
         return Nothing
 
 -- --- BUCLE PRINCIPAL ---
-mainLoop :: Renderer -> Maybe Texture -> Maybe Texture -> Maybe Texture -> Maybe Texture -> Maybe Texture -> AppState -> IO ()
-mainLoop renderer tOrc tWalk tAtk tMenuBg tMenuLogo appState = do
+mainLoop :: Renderer -> Maybe Texture -> Maybe Texture -> Maybe Texture -> Maybe Texture -> Maybe Texture -> Maybe Texture -> AppState -> IO ()
+mainLoop renderer tOrc tWalk tAtk tWall tMenuBg tMenuLogo appState = do
   events <- pollEvents
   let quitSignal = any (== QuitEvent) (map eventPayload events)
   
@@ -96,10 +97,10 @@ mainLoop renderer tOrc tWalk tAtk tMenuBg tMenuLogo appState = do
     then renderInstructions renderer
     else if inMenu newAppState
       then Menu.renderMenu renderer tMenuBg tMenuLogo (menuState newAppState)
-      else renderSDL renderer tOrc tWalk tAtk (gameState newAppState)
+      else renderSDL renderer tOrc tWalk tAtk tWall (gameState newAppState)
 
   delay 50
-  unless quitSignal (mainLoop renderer tOrc tWalk tAtk tMenuBg tMenuLogo newAppState)
+  unless quitSignal (mainLoop renderer tOrc tWalk tAtk tWall tMenuBg tMenuLogo newAppState)
 
 -- --- MANEJO DEL MENÚ ---
 handleMenuState :: Renderer -> Maybe Char -> AppState -> IO AppState
@@ -107,8 +108,8 @@ handleMenuState renderer (Just 'e') appState@AppState{..} = do
   case selectedOption menuState of
     Menu.Play -> do
       putStrLn "=== Iniciando Juego ==="
-      loadedState <- loadInitialState -- AHORA LLAMA A LA ACCIÓN IO
-      return appState { inMenu = False, gameState = loadedState } -- USA EL ESTADO CARGADO
+      loadedState <- loadInitialState
+      return appState { inMenu = False, gameState = loadedState }
 
     Menu.Quit -> do
       putStrLn "=== Saliendo del Juego ==="
@@ -178,7 +179,7 @@ handleGameState _ _ _ _ (Just c) appState@AppState{..} = do
       if win gsNext
         then putStrLn "=== ¡VICTORIA! Volviendo al menú ==="
         else putStrLn "=== Game Over. Volviendo al menú ==="
-      return appState { inMenu = True, menuState = initialMenuState, gameState = initialState } -- Usa el estado puro (fallback) para reset
+      return appState { inMenu = True, menuState = initialMenuState, gameState = initialState }
     else return appState { gameState = gsNext }
 
 handleGameState _ _ _ _ Nothing appState@AppState{..} = do

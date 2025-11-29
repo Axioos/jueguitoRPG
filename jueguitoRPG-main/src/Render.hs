@@ -23,38 +23,50 @@ playerScale :: CInt
 playerScale = 3
 
 -- --- FUNCIÓN PRINCIPAL DE RENDERIZADO ---
-renderSDL :: Renderer -> Maybe Texture -> Maybe Texture -> Maybe Texture -> GameState -> IO ()
-renderSDL renderer texOrc texPWalk texPAtk gs@GameState{..} = do
+renderSDL :: Renderer -> Maybe Texture -> Maybe Texture -> Maybe Texture -> Maybe Texture -> GameState -> IO ()
+renderSDL renderer texOrc texPWalk texPAtk texWall gs@GameState{..} = do
   rendererDrawColor renderer $= V4 0 0 0 255
   clear renderer
 
   let coords = [ (x, y) | x <- [0..width-1], y <- [0..height-1] ]
   
-  -- 1. Capa Fondo (Suelo)
-  mapM_ (drawBackground renderer gs) coords
+  -- Capa Fondo (Suelo/Paredes)
+  mapM_ (drawBackground renderer texWall gs) coords
 
-  -- 2. Capa Enemigos (Interpolados)
+  -- Capa Enemigos (Interpolados)
   mapM_ (drawEnemyInterpolated renderer texOrc actionTimer gameFrame) enemies
 
-  -- 3. Capa Jugador (Interpolado)
+  -- Capa Jugador (Interpolado)
   drawPlayerInterpolated renderer texPWalk texPAtk playerPos playerFrom playerDir playerAtkFrame gameFrame actionTimer
 
   present renderer
 
 -- --- DIBUJADO DE FONDO ---
-drawBackground :: Renderer -> GameState -> (Int, Int) -> IO ()
-drawBackground renderer GameState{..} (x, y) = do
+drawBackground :: Renderer -> Maybe Texture -> GameState -> (Int, Int) -> IO ()
+drawBackground renderer mbTexWall GameState{..} (x, y) = do
   let pos = (x,y)
       destRect = Rectangle (P (V2 (fromIntegral x * tileSize) (fromIntegral y * tileSize))) 
                            (V2 tileSize tileSize)
-      color 
-        | pos == goal    = V4 0 0 255 255
-        | pos == portalA || pos == portalB = V4 0 255 255 255
-        | pos `elem` walls = V4 128 128 128 255
-        | otherwise      = checkItems pos items
-  
-  rendererDrawColor renderer $= color
-  fillRect renderer (Just destRect)
+      
+  if pos `elem` walls
+    then case mbTexWall of
+      Just texWall -> do
+        -- Dibuja el primer tile (0, 0) de la textura de muros
+        let srcRect = Rectangle (P (V2 0 0)) (V2 tileSize tileSize)
+        copy renderer texWall (Just srcRect) (Just destRect)
+      Nothing -> do
+        -- Fallback: color gris sólido
+        rendererDrawColor renderer $= V4 128 128 128 255
+        fillRect renderer (Just destRect)
+    else do
+      -- Dibuja Suelo, Meta, Portal o Items
+      let color 
+            | pos == goal    = V4 0 0 255 255
+            | pos == portalA || pos == portalB = V4 0 255 255 255
+            | otherwise      = checkItems pos items
+            
+      rendererDrawColor renderer $= color
+      fillRect renderer (Just destRect)
 
 -- --- MATEMÁTICAS DE INTERPOLACIÓN (LERP) ---
 getInterpolatedPixel :: Position -> Position -> Int -> (CInt, CInt)
@@ -136,4 +148,4 @@ checkItems pos itemList =
         Just QuestItem -> V4 255 165 0 255
         Just Heart     -> V4 0 255 0 255
         Just Strength  -> V4 255 0 255 255
-        Nothing        -> V4 20 20 20 255
+        Nothing        -> V4 80 80 80 255 -- GRISÁCEO (SUELO)
