@@ -12,7 +12,7 @@ import Data.Maybe (listToMaybe, mapMaybe)
 import Control.Exception (catch, SomeException)
 
 import Types
-import Logic
+import Logic (initialState, loadInitialState, handleInput, advanceAnimations) -- Importa loadInitialState
 import Render (renderSDL)
 import qualified Menu
 import Menu (MenuState, MenuOption(..), initialMenuState, handleMenuInput, renderMenu, selectedOption)
@@ -49,7 +49,7 @@ main = do
   
   let appState = AppState
         { menuState = initialMenuState
-        , gameState = initialState
+        , gameState = initialState -- Se usa el estado puro (fallback) para inicializar
         , inMenu = True
         , showingInstructions = False
         }
@@ -95,7 +95,7 @@ mainLoop renderer tOrc tWalk tAtk tMenuBg tMenuLogo appState = do
   if showingInstructions newAppState
     then renderInstructions renderer
     else if inMenu newAppState
-      then renderMenu renderer tMenuBg tMenuLogo (menuState newAppState)
+      then Menu.renderMenu renderer tMenuBg tMenuLogo (menuState newAppState)
       else renderSDL renderer tOrc tWalk tAtk (gameState newAppState)
 
   delay 50
@@ -107,11 +107,12 @@ handleMenuState renderer (Just 'e') appState@AppState{..} = do
   case selectedOption menuState of
     Menu.Play -> do
       putStrLn "=== Iniciando Juego ==="
-      return appState { inMenu = False, gameState = initialState }
-    
+      loadedState <- loadInitialState -- AHORA LLAMA A LA ACCIÓN IO
+      return appState { inMenu = False, gameState = loadedState } -- USA EL ESTADO CARGADO
+
     Menu.Quit -> do
       putStrLn "=== Saliendo del Juego ==="
-      error "Quit selected"  -- Forzar salida
+      error "Quit selected"
 
 handleMenuState _ (Just c) appState@AppState{..} = do
   let newMenuState = handleMenuInput c menuState
@@ -177,7 +178,7 @@ handleGameState _ _ _ _ (Just c) appState@AppState{..} = do
       if win gsNext
         then putStrLn "=== ¡VICTORIA! Volviendo al menú ==="
         else putStrLn "=== Game Over. Volviendo al menú ==="
-      return appState { inMenu = True, menuState = initialMenuState, gameState = initialState }
+      return appState { inMenu = True, menuState = initialMenuState, gameState = initialState } -- Usa el estado puro (fallback) para reset
     else return appState { gameState = gsNext }
 
 handleGameState _ _ _ _ Nothing appState@AppState{..} = do

@@ -16,6 +16,7 @@ maintainer:          axiaxos@gmail.com
 -- category:
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
+                     assets/levels/level1.txt
 
 executable jueguitoRPG
   main-is:             Main.hs

@@ -1,7 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Logic
-  ( initialState
+  ( initialState -- Exporta el estado inicial (fallback puro)
+  , loadInitialState -- Exporta la acción IO de carga de archivo
   , handleInput
   , advanceAnimations
   ) where
@@ -10,8 +11,106 @@ import Types
 import Control.Monad.State
 import Control.Monad (unless)
 import Data.List (partition)
+import System.IO
+import Control.Exception (catch, SomeException)
+import Data.Char (isSpace)
 
--- --- ESTADO INICIAL ---
+-- --- PARSING DEL MAPA GRID ---
+
+data ParsedMap = ParsedMap
+  { pmWidth :: Int
+  , pmHeight :: Int
+  , pmPlayerPos :: Position
+  , pmGoal :: Position
+  , pmPortalA :: Position
+  , pmPortalB :: Position
+  , pmWalls :: [Position]
+  , pmItems :: [(Position, ItemKind)]
+  , pmEnemies :: [Position]
+  } deriving (Show)
+
+parseGridContent :: String -> ParsedMap
+parseGridContent content = 
+    let 
+        rawLines = lines content
+
+        isHeaderComment l = case dropWhile isSpace l of
+                              "" -> True
+                              ('#':c:_) -> isSpace c
+                              _ -> False
+
+        mapStart = dropWhile isHeaderComment rawLines
+        rawMap = filter (not . null) mapStart
+        
+        h = length rawMap
+        w = if h > 0 then length (head rawMap) else 0
+
+        emptyMap = ParsedMap w h (0,0) (0,0) (0,0) (0,0) [] [] []
+        
+        (finalMap, portalPositions) = foldl parseRow (emptyMap, []) (zip [0..h-1] rawMap)
+
+        finalMapWithPortals = case portalPositions of
+                                [p1, p2] -> finalMap { pmPortalA = p1, pmPortalB = p2 }
+                                _        -> finalMap 
+    in finalMapWithPortals
+
+parseRow :: (ParsedMap, [Position]) -> (Int, String) -> (ParsedMap, [Position])
+parseRow (pm, portals) (y, row) = 
+    foldl (parseCell y) (pm, portals) (zip [0..pmWidth pm - 1] row)
+
+parseCell :: Int -> (ParsedMap, [Position]) -> (Int, Char) -> (ParsedMap, [Position])
+parseCell y (pm, portals) (x, char) =
+    let pos = (x, y)
+        pmWallUpdated = if char == '#' 
+                        then pm { pmWalls = pos : pmWalls pm } 
+                        else pm
+            
+    in case char of
+        'J' -> (pmWallUpdated { pmPlayerPos = pos }, portals)
+        'E' -> (pmWallUpdated { pmEnemies = pos : pmEnemies pm }, portals)
+        'T' -> (pmWallUpdated { pmItems = (pos, QuestItem) : pmItems pm }, portals)
+        'S' -> (pmWallUpdated { pmItems = (pos, Heart) : pmItems pm }, portals)
+        'A' -> (pmWallUpdated { pmItems = (pos, Strength) : pmItems pm }, portals)
+        'F' -> (pmWallUpdated { pmGoal = pos }, portals)
+        'P' -> (pmWallUpdated, pos : portals)
+        _   -> (pmWallUpdated, portals)
+
+mapToGameState :: ParsedMap -> GameState
+mapToGameState ParsedMap{..} =
+  let 
+      questItems = [k | (_,k) <- pmItems, k == QuestItem]
+      
+      mkEnemy (x,y) = Enemy { ePos=(x,y), eFrom=(x,y), eDir=DDown }
+      initialEnemies = map mkEnemy pmEnemies
+
+  in GameState
+      { playerPos = pmPlayerPos, playerFrom = pmPlayerPos, playerDir = DDown
+      , playerAtkFrame = 0, actionTimer = 0, hp = 10, maxHp = 10, atk = 1
+      , questCollected = 0, totalQuest = length questItems
+      , items = pmItems, enemies = initialEnemies, walls = pmWalls
+      , goal = pmGoal, portalA = pmPortalA, portalB = pmPortalB
+      , width = pmWidth, height = pmHeight, message = "Recolecta los T y llega a la F."
+      , gameOver = False, win = False, level = 1, gameFrame = 0
+      }
+
+-- Función principal para cargar el estado inicial (IO)
+loadInitialState :: IO GameState
+loadInitialState = do
+    putStrLn "Cargando nivel 1 desde assets/levels/level1.txt (Grid Map)..."
+    catch 
+        (do
+            content <- readFile "assets/levels/level1.txt"
+            let parsedMap = parseGridContent content
+            return $ mapToGameState parsedMap
+        ) 
+        (\e -> do
+            let err = show (e :: SomeException)
+            putStrLn $ "Error al cargar el nivel: " ++ err
+            putStrLn "Cargando estado inicial por defecto (Hardcoded)."
+            return initialState -- Usa el estado puro de fallback
+        )
+
+-- --- ESTADO INICIAL DE FALLBACK (PURO) ---
 initialState :: GameState
 initialState =
   let w = 30
@@ -35,7 +134,7 @@ initialState =
       , questCollected = 0, totalQuest = length questItems
       , items = itemsPos, enemies = initialEnemies, walls = allWalls
       , goal = (27,11), portalA = pA, portalB = pB
-      , width = w, height = h, message = "Recolecta los Q y llega a la T."
+      , width = w, height = h, message = "Recolecta los T y llega a la F."
       , gameOver = False, win = False, level = 1, gameFrame = 0
       }
 
